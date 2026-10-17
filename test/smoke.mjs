@@ -69,8 +69,9 @@ const server = http.createServer((req, res) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 
-async function connect(apiKey) {
-  const env = { ...process.env, ALTTEXTGENERATORAI_API_BASE_URL: `${base}/api` };
+async function connect(apiKey, extra = {}) {
+  const env = { ...process.env, ALTTEXTGENERATORAI_API_BASE_URL: `${base}/api`, ALTTEXTGENERATORAI_ALLOW_PRIVATE_URLS: "1", ...extra };
+  for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
   if (apiKey) env.ALTTEXTGENERATORAI_API_KEY = apiKey;
   else delete env.ALTTEXTGENERATORAI_API_KEY;
   const transport = new StdioClientTransport({ command: process.execPath, args: [entry], env, stderr: "ignore" });
@@ -191,12 +192,57 @@ await check("audit_page rejects a page that is not HTML", async () => {
 });
 
 await check("audit_page reports an unreachable page", async () => {
-  const r = await client.callTool({ name: "audit_page", arguments: { url: "http://127.0.0.1:1/none.html" } });
+  const closed = await new Promise((resolve) => {
+    const probe = http.createServer().listen(0, "127.0.0.1", () => {
+      const port = probe.address().port;
+      probe.close(() => resolve(port));
+    });
+  });
+  const r = await client.callTool({ name: "audit_page", arguments: { url: `http://127.0.0.1:${closed}/none.html` } });
   assert.equal(r.isError, true);
-  assert.match(text(r), /could not be loaded/);
+  assert.match(text(r), /could not be loaded \(the connection was refused\)/);
+  assert.ok(!/ECONN|at |Error:/.test(text(r)), "no raw error text");
 });
 
 await client.close();
+
+// ---- safety checks ----
+const strict = await connect("test-key", { ALTTEXTGENERATORAI_ALLOW_PRIVATE_URLS: undefined });
+await check("audit_page refuses local and private addresses", async () => {
+  for (const url of [`${base}/page.html`, "http://localhost:3000/", "http://169.254.169.254/latest/meta-data/", "http://[::1]/", "http://10.0.0.5/", "http://192.168.1.1/", "http://[::ffff:127.0.0.1]/", "http://printer.local/"]) {
+    const r = await strict.callTool({ name: "audit_page", arguments: { url } });
+    assert.equal(r.isError, true, url + " should be refused");
+    assert.match(text(r), /only public web pages can be scanned/, url);
+  }
+});
+await strict.close();
+
+writeFileSync(path.join(dir, "fake.png"), "this is not an image, it is a text file pretending to be one");
+const sub = path.join(dir, "allowed");
+import("node:fs").then(() => {});
+const { mkdirSync, copyFileSync } = await import("node:fs");
+mkdirSync(sub);
+copyFileSync(path.join(dir, "pic.png"), path.join(sub, "inside.png"));
+const fenced = await connect("test-key", { ALTTEXTGENERATORAI_ALLOWED_DIR: sub });
+await check("a text file renamed .png is not read", async () => {
+  const r = await fenced.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(dir, "fake.png") } });
+  assert.equal(r.isError, true);
+});
+await check("with an allowed folder, only files inside it are read", async () => {
+  const outside = await fenced.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(dir, "pic.png") } });
+  assert.equal(outside.isError, true);
+  assert.match(text(outside), /outside the folder/);
+  const inside = await fenced.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(sub, "inside.png") } });
+  assert.ok(!inside.isError, text(inside));
+  const sneaky = await fenced.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(sub, "..", "pic.png") } });
+  assert.equal(sneaky.isError, true);
+});
+await fenced.close();
+
+await check("a custom API address must be https (or localhost)", async () => {
+  await assert.rejects(() => connect("test-key", { ALTTEXTGENERATORAI_API_BASE_URL: "http://example.com/api" }));
+  await assert.rejects(() => connect("test-key", { ALTTEXTGENERATORAI_API_BASE_URL: "not a url" }));
+});
 
 const wrong = await connect("wrong-key");
 await check("a wrong API key gives a clear message", async () => {

@@ -1,6 +1,6 @@
 {
   "name": "alttextgeneratorai-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server that writes SEO-friendly, accessible alt text for images with AI, and finds images missing alt text on any web page. Works with AltTextGeneratorAI.com.",
   "mcpName": "io.github.balt1794/alttextgeneratorai-mcp",
   "type": "module",

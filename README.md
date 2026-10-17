@@ -86,7 +86,15 @@ Notes:
 | Variable | Required | Description |
 | --- | --- | --- |
 | `ALTTEXTGENERATORAI_API_KEY` | Yes, for generating and credits | Your API key. `audit_page` without `generate` works without it. |
-| `ALTTEXTGENERATORAI_API_BASE_URL` | No | Override the API address. Default `https://alttextgeneratorai.com/api`. |
+| `ALTTEXTGENERATORAI_ALLOWED_DIR` | No | If set, `generate_alt_text_from_file` only reads image files inside this folder. |
+| `ALTTEXTGENERATORAI_API_BASE_URL` | No | Override the API address (for testing). Must be https, or http on localhost. Default `https://alttextgeneratorai.com/api`. |
+
+## Safety
+
+- **`audit_page` only reads public web pages.** Local and private network addresses (localhost, 192.168.x.x, 10.x.x.x, cloud metadata addresses) are refused, including after redirects.
+- **`generate_alt_text_from_file` only reads real images.** The file's contents are checked, not just its name, and you can limit it to one folder with `ALTTEXTGENERATORAI_ALLOWED_DIR`.
+- Your API key is read from an environment variable, sent only to the AltTextGeneratorAI API over https, and never written to logs.
+- Error messages are short and never include raw technical output.
 
 ## Privacy
 
