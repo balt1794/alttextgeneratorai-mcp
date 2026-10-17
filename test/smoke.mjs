@@ -122,7 +122,8 @@ await check("generate_alt_text reports a service error", async () => {
 });
 
 const dir = mkdtempSync(path.join(tmpdir(), "altmcp-"));
-const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+// A stand-in image: the PNG signature followed by padding. The server only checks the first bytes.
+const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64)]);
 writeFileSync(path.join(dir, "pic.png"), png);
 writeFileSync(path.join(dir, "notes.txt"), "x");
 writeFileSync(path.join(dir, "big.jpg"), Buffer.alloc(3 * 1024 * 1024 + 10));
