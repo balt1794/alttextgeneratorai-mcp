@@ -86,19 +86,19 @@ Notes:
 | Variable | Required | Description |
 | --- | --- | --- |
 | `ALTTEXTGENERATORAI_API_KEY` | Yes, for generating and credits | Your API key. `audit_page` without `generate` works without it. |
-| `ALTTEXTGENERATORAI_ALLOWED_DIR` | No | If set, `generate_alt_text_from_file` only reads image files inside this folder. |
+| `ALTTEXTGENERATORAI_ALLOWED_DIR` | No | Folder (or several, separated by `:` on Mac and Linux, `;` on Windows) that `generate_alt_text_from_file` may read. Default: your home folder and the temp folder. |
 | `ALTTEXTGENERATORAI_API_BASE_URL` | No | Override the API address (for testing). Must be https, or http on localhost. Default `https://alttextgeneratorai.com/api`. |
 
 ## Safety
 
-- **`audit_page` only reads public web pages.** Local and private network addresses (localhost, 192.168.x.x, 10.x.x.x, cloud metadata addresses) are refused, including after redirects.
-- **`generate_alt_text_from_file` only reads real images.** The file's contents are checked, not just its name, and you can limit it to one folder with `ALTTEXTGENERATORAI_ALLOWED_DIR`.
-- Your API key is read from an environment variable, sent only to the AltTextGeneratorAI API over https, and never written to logs.
+- **`audit_page` only reads public web pages.** Local and private network addresses (localhost, 192.168.x.x, 10.x.x.x, cloud metadata addresses) are refused, including after redirects. The address is checked at the moment the connection is made, so a hostname cannot point somewhere else the second time.
+- **`generate_alt_text_from_file` only reads real images, and only in allowed folders.** By default that is your home folder and the temp folder. Choose other folders, or narrow it to one, with `ALTTEXTGENERATORAI_ALLOWED_DIR`. The file's contents are checked, not just its name.
+- Your API key is read from an environment variable, sent only to the AltTextGeneratorAI API over https, and never written to logs. A custom API address must use https.
 - Error messages are short and never include raw technical output.
 
 ## Privacy
 
-To write alt text, the server sends your API key, the chosen language and either the image's public address or the image file itself to AltTextGeneratorAI.com. `audit_page` downloads the page you ask about directly from your computer. Nothing else is sent. See the [privacy policy](https://alttextgeneratorai.com/privacy-policy).
+To write alt text, the server sends your API key, the chosen language and either the image's public address or the image file itself to AltTextGeneratorAI.com. When you give an image address (including with `audit_page` and `generate: true`), the **AltTextGeneratorAI service downloads that image** to describe it, and it only accepts public web addresses. `audit_page` downloads the page you ask about directly from your computer. Nothing else is sent. See the [privacy policy](https://alttextgeneratorai.com/privacy-policy).
 
 ## Development
 

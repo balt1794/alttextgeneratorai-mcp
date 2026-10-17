@@ -10,7 +10,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const entry = path.join(here, "..", "dist", "index.js");
+const shipped = path.join(here, "..", "dist", "index.js"); // the program people install
+const testEntry = path.join(here, "entry.mjs"); // same server, but allowed to read pages on this computer
 
 const PAGE = `<!doctype html><html><body>
 <img src="/a.jpg" alt="A dog on a beach">
@@ -69,12 +70,12 @@ const server = http.createServer((req, res) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 
-async function connect(apiKey, extra = {}) {
-  const env = { ...process.env, ALTTEXTGENERATORAI_API_BASE_URL: `${base}/api`, ALTTEXTGENERATORAI_ALLOW_PRIVATE_URLS: "1", ...extra };
+async function connect(apiKey, extra = {}, { strict = false } = {}) {
+  const env = { ...process.env, ALTTEXTGENERATORAI_API_BASE_URL: `${base}/api`, ...extra };
   for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
   if (apiKey) env.ALTTEXTGENERATORAI_API_KEY = apiKey;
   else delete env.ALTTEXTGENERATORAI_API_KEY;
-  const transport = new StdioClientTransport({ command: process.execPath, args: [entry], env, stderr: "ignore" });
+  const transport = new StdioClientTransport({ command: process.execPath, args: [strict ? shipped : testEntry], env, stderr: "ignore" });
   const client = new Client({ name: "smoke-test", version: "1.0.0" });
   await client.connect(transport);
   return client;
@@ -207,7 +208,7 @@ await check("audit_page reports an unreachable page", async () => {
 await client.close();
 
 // ---- safety checks ----
-const strict = await connect("test-key", { ALTTEXTGENERATORAI_ALLOW_PRIVATE_URLS: undefined });
+const strict = await connect("test-key", {}, { strict: true });
 await check("audit_page refuses local and private addresses", async () => {
   for (const url of [`${base}/page.html`, "http://localhost:3000/", "http://169.254.169.254/latest/meta-data/", "http://[::1]/", "http://10.0.0.5/", "http://192.168.1.1/", "http://[::ffff:127.0.0.1]/", "http://printer.local/"]) {
     const r = await strict.callTool({ name: "audit_page", arguments: { url } });
@@ -215,23 +216,60 @@ await check("audit_page refuses local and private addresses", async () => {
     assert.match(text(r), /only public web pages can be scanned/, url);
   }
 });
+import dnsPromises from "node:dns/promises";
+await check("a hostname that points to this computer is refused when the connection is made", async () => {
+  let resolved = [];
+  try {
+    resolved = await dnsPromises.lookup("localtest.me", { all: true });
+  } catch {
+    console.log("       (skipped: no internet to resolve localtest.me)");
+    return;
+  }
+  if (!resolved.some((entry) => entry.address === "127.0.0.1")) {
+    console.log("       (skipped: localtest.me does not point to 127.0.0.1 here)");
+    return;
+  }
+  const port = new URL(base).port;
+  const r = await strict.callTool({ name: "audit_page", arguments: { url: `http://localtest.me:${port}/page.html` } });
+  assert.equal(r.isError, true, "a name that resolves to 127.0.0.1 must be refused");
+  assert.match(text(r), /only public web pages can be scanned/);
+});
 await strict.close();
 
 writeFileSync(path.join(dir, "fake.png"), "this is not an image, it is a text file pretending to be one");
-const sub = path.join(dir, "allowed");
-import("node:fs").then(() => {});
 const { mkdirSync, copyFileSync } = await import("node:fs");
+const plain = await connect("test-key");
+await check("a text file renamed .png is not read", async () => {
+  const r = await plain.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(dir, "fake.png") } });
+  assert.equal(r.isError, true);
+  assert.match(text(r), /not a JPEG, PNG, GIF or WebP image/);
+});
+await plain.close();
+
+// By default only the home folder and the temp folder are readable
+const fakeHome = path.join(dir, "home");
+const fakeTmp = path.join(dir, "tmp");
+mkdirSync(fakeHome);
+mkdirSync(fakeTmp);
+copyFileSync(path.join(dir, "pic.png"), path.join(fakeHome, "mine.png"));
+const defaults = await connect("test-key", { HOME: fakeHome, USERPROFILE: fakeHome, TMPDIR: fakeTmp });
+await check("by default only the home folder and the temp folder can be read", async () => {
+  const inHome = await defaults.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(fakeHome, "mine.png") } });
+  assert.ok(!inHome.isError, text(inHome));
+  const elsewhere = await defaults.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(dir, "pic.png") } });
+  assert.equal(elsewhere.isError, true);
+  assert.match(text(elsewhere), /outside the folders this server may read/);
+});
+await defaults.close();
+
+const sub = path.join(dir, "allowed");
 mkdirSync(sub);
 copyFileSync(path.join(dir, "pic.png"), path.join(sub, "inside.png"));
 const fenced = await connect("test-key", { ALTTEXTGENERATORAI_ALLOWED_DIR: sub });
-await check("a text file renamed .png is not read", async () => {
-  const r = await fenced.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(dir, "fake.png") } });
-  assert.equal(r.isError, true);
-});
 await check("with an allowed folder, only files inside it are read", async () => {
   const outside = await fenced.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(dir, "pic.png") } });
   assert.equal(outside.isError, true);
-  assert.match(text(outside), /outside the folder/);
+  assert.match(text(outside), /outside the folders/);
   const inside = await fenced.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(sub, "inside.png") } });
   assert.ok(!inside.isError, text(inside));
   const sneaky = await fenced.callTool({ name: "generate_alt_text_from_file", arguments: { file_path: path.join(sub, "..", "pic.png") } });
