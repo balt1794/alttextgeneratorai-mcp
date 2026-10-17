@@ -1,0 +1,56 @@
+{
+  "name": "alttextgeneratorai-mcp",
+  "version": "1.0.0",
+  "description": "MCP server that writes SEO-friendly, accessible alt text for images with AI, and finds images missing alt text on any web page. Works with AltTextGeneratorAI.com.",
+  "mcpName": "io.github.balt1794/alttextgeneratorai-mcp",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "alttextgeneratorai-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "server.json"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('dist/index.js', 0o755)\"",
+    "start": "node dist/index.js",
+    "test": "npm run build && node test/smoke.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "alt-text",
+    "accessibility",
+    "seo",
+    "images",
+    "wcag",
+    "ai",
+    "claude",
+    "image-description"
+  ],
+  "author": "AltTextGeneratorAI <support@alttextgeneratorai.com>",
+  "license": "MIT",
+  "homepage": "https://alttextgeneratorai.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/balt1794/alttextgeneratorai-mcp.git"
+  },
+  "bugs": {
+    "email": "support@alttextgeneratorai.com"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}
